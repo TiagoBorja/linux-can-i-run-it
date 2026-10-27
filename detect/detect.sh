@@ -6,6 +6,8 @@
 set -euo pipefail
 export LC_ALL=C # lscpu output is translated otherwise
 
+PCI_SYS=/sys/bus/pci/devices # tests point this at a fake folder after they source this file
+
 have() { command -v "$1" >/dev/null 2>&1; }
 # glxinfo and vulkaninfo can hang without a display, and nvidia-smi with a broken driver, so give them 5 seconds
 run() { if have timeout; then timeout 5 "$@"; else "$@"; fi; }
@@ -111,7 +113,7 @@ main() {
   for i in "${!gv[@]}"; do
     case ${gv[i]} in
       amd | intel)
-        f=/sys/bus/pci/devices/${gb[i]}/mem_info_vram_total
+        f=$PCI_SYS/${gb[i]}/mem_info_vram_total
         b=$(cat "$f" 2>/dev/null || true)
         if [[ $b =~ ^[0-9]+$ ]]; then gr[i]=$((b / 1048576)); fi
         load_mesa

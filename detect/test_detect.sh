@@ -101,4 +101,113 @@ check "json_num abc -> null" test "$(call json_num abc)" = null
 check "json_num empty -> null" test "$(call json_num "")" = null
 check "json_num 42 -> 42" test "$(call json_num 42)" = 42
 
+# ---- 6. Parsing with stub tools (no GPU, nvidia-smi, glxinfo or vulkaninfo needed) ----
+base=$(mktemp -d); trap 'rm -rf "$tmp" "$base"' EXIT
+mkdir -p "$base/bin"
+for t in bash awk grep sed df uname cat tr head cut timeout; do
+  p=$(command -v "$t") && ln -s "$p" "$base/bin/$t"
+done
+stub() { # stub CASE TOOL: write stdin as the script of TOOL for CASE
+  mkdir -p "$base/$1"; { echo '#!/bin/sh'; cat; } >"$base/$1/$2"; chmod +x "$base/$1/$2"
+}
+fake() { # fake CASE: run main with only the stubs of CASE and the base tools on PATH
+  ( PATH="$base/$1:$base/bin"; source "$DETECT"; PCI_SYS="$base/$1/sys"; main ) 2>/dev/null
+}
+LSPCI_NV0='0000:01:00.0 "VGA compatible controller [0300]" "NVIDIA Corporation [10de]" "AD107M [GeForce RTX 4060 Max-Q / Mobile] [28e0]" -ra1 -p00 "Lenovo [17aa]" "Device [3c3d]"'
+LSPCI_AMD='0000:65:00.0 "Display controller [0380]" "Advanced Micro Devices, Inc. [AMD/ATI] [1002]" "Phoenix1 [15bf]" -rc4 -p00 "Lenovo [17aa]" "Device [3c3d]"'
+
+# Case good: NVIDIA in two PCI domains with the same bus, AMD with sysfs VRAM, Ubuntu Mesa,
+# Vulkan with the CPU device first and the old packed apiVersion format.
+stub good lscpu <<'EOF'
+cat <<'X'
+Architecture:                         x86_64
+CPU(s) scaling MHz:                   50%
+CPU(s):                               16
+Model name:                           AMD Ryzen 7 7840HS w/ Radeon 780M Graphics
+Core(s) per socket:                   8
+Socket(s):                            1
+X
+EOF
+stub good lspci <<EOF
+cat <<'X'
+$LSPCI_NV0
+${LSPCI_NV0/#0000/0001}
+0000:65:00.1 "Audio device [0403]" "Advanced Micro Devices, Inc. [AMD/ATI] [1002]" "Rembrandt Radeon High Definition Audio Controller [1640]" -p00 "Lenovo [17aa]" "Device [3c3d]"
+$LSPCI_AMD
+X
+EOF
+stub good nvidia-smi <<'EOF'
+echo '00000000:01:00.0, NVIDIA GeForce RTX 4060 Laptop GPU, 8188, 550.54.14'
+EOF
+stub good glxinfo <<'EOF'
+echo 'OpenGL version string: 4.6 (Compatibility Profile) Mesa 24.0.5-1ubuntu1'
+EOF
+stub good vulkaninfo <<'EOF'
+cat <<'X'
+Vulkan Instance Version: 1.3.275
+
+Devices:
+========
+GPU0:
+	apiVersion         = 1.3.255
+	deviceType         = PHYSICAL_DEVICE_TYPE_CPU
+	deviceName         = llvmpipe (LLVM 17.0.6, 256 bits)
+GPU1:
+	apiVersion         = 4206802 (1.3.274)
+	deviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
+	deviceName         = AMD Radeon 780M (RADV GFX1103_R1)
+X
+EOF
+mkdir -p "$base/good/sys/0000:65:00.0"; echo 536870912 >"$base/good/sys/0000:65:00.0/mem_info_vram_total"
+G=$(fake good)
+check "stub good: valid JSON" j . "$G"
+check "stub good: cpu model, cores = cores x sockets, threads" j '.cpu == {"model": "AMD Ryzen 7 7840HS w/ Radeon 780M Graphics", "cores": 8, "threads": 16}' "$G"
+check "stub good: audio device skipped, 3 GPUs" j '.gpus | length == 3' "$G"
+check "stub good: nvidia-smi merged into domain 0000 only" j '.gpus[0] == {"vendor": "nvidia", "model": "NVIDIA GeForce RTX 4060 Laptop GPU", "vramMb": 8188, "driver": "nvidia 550.54.14"}' "$G"
+check "stub good: domain 0001 keeps lspci model" j '.gpus[1] == {"vendor": "nvidia", "model": "GeForce RTX 4060 Max-Q / Mobile", "vramMb": null, "driver": null}' "$G"
+check "stub good: amd vram from sysfs, dotted Mesa from glxinfo" j '.gpus[2] == {"vendor": "amd", "model": "Phoenix1", "vramMb": 512, "driver": "mesa 24.0.5"}' "$G"
+check "stub good: vulkan from the non-CPU device, dotted apiVersion" j '.vulkan == {"supported": true, "apiVersion": "1.3.274"}' "$G"
+
+# Case broken: nvidia-smi prints a driver error, vulkaninfo times out (exit 124).
+stub broken lspci <<EOF
+printf '%s\n' '$LSPCI_NV0' '$LSPCI_AMD'
+EOF
+stub broken nvidia-smi <<'EOF'
+echo "NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running."
+exit 9
+EOF
+stub broken vulkaninfo <<'EOF'
+exit 124
+EOF
+B=$(fake broken)
+check "stub broken: valid JSON" j . "$B"
+check "stub broken: no fake GPU from nvidia-smi error text" j '.gpus | length == 2' "$B"
+check "stub broken: nvidia keeps lspci model, null driver" j '.gpus[0] == {"vendor": "nvidia", "model": "GeForce RTX 4060 Max-Q / Mobile", "vramMb": null, "driver": null}' "$B"
+check "stub broken: no lscpu -> cpu fields null" j '.cpu | .model == null and .cores == null and .threads == null' "$B"
+check "stub broken: vulkaninfo timeout -> supported null" j '.vulkan == {"supported": null, "apiVersion": null}' "$B"
+
+# Case na: nvidia-smi prints empty and [N/A] values, Vulkan has only the CPU device.
+stub na lspci <<EOF
+printf '%s\n' '$LSPCI_NV0' '$LSPCI_AMD'
+EOF
+stub na nvidia-smi <<'EOF'
+echo '00000000:01:00.0, , [N/A], [N/A]'
+EOF
+stub na vulkaninfo <<'EOF'
+cat <<'X'
+Devices:
+========
+GPU0:
+	apiVersion         = 1.3.289
+	deviceType         = PHYSICAL_DEVICE_TYPE_CPU
+	deviceName         = llvmpipe (LLVM 19.1.1, 256 bits)
+	driverInfo         = Mesa 24.2.8-1ubuntu1~24.04.1
+X
+EOF
+N=$(fake na)
+check "stub na: valid JSON" j . "$N"
+check "stub na: empty and [N/A] keep lspci model, null vram and driver" j '.gpus[0] == {"vendor": "nvidia", "model": "GeForce RTX 4060 Max-Q / Mobile", "vramMb": null, "driver": null}' "$N"
+check "stub na: no glxinfo -> dotted Mesa from vulkaninfo driverInfo" j '.gpus[1].driver == "mesa 24.2.8"' "$N"
+check "stub na: only CPU device -> supported false, apiVersion null" j '.vulkan == {"supported": false, "apiVersion": null}' "$N"
+
 exit "$FAILED"
