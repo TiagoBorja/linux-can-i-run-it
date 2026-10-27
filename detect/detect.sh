@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # detect.sh - prints your CPU, GPU, RAM, free disk, distro, kernel and Vulkan support as JSON.
 # It only reads: lscpu, lspci, nvidia-smi, glxinfo, vulkaninfo, /proc/meminfo, /etc/os-release,
-# df of your home folder and uname. It never reads your hostname, user name, IP, MAC address,
+# /sys/bus/pci/devices/<id>/mem_info_vram_total, df of your home folder and uname. It never reads your hostname, user name, IP, MAC address,
 # serial numbers or machine-id. It does not send anything: the JSON goes to your terminal only.
 set -euo pipefail
 export LC_ALL=C # lscpu output is translated otherwise
