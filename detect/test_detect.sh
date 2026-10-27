@@ -101,7 +101,9 @@ str_is() { # str_is INPUT EXPECTED: json_str output must be valid JSON decoding 
 check "json_str control chars -> spaces" str_is $'a\nb\tc\r\x01d' "a b c  d"
 check "json_str invalid UTF-8 dropped" str_is $'GPU\xff\xfeX' "GPUX"
 check "json_str non-ASCII dropped" str_is "Radeon™ 680M" "Radeon 680M"
-check "json_str lone control char -> space" str_is $'\x01' " "
+str_null() { jq -e --argjson o "{\"v\": $(call json_str "$1")}" '$o.v == null' <<<null; }
+check "json_str lone control char -> null" str_null $'\x01'
+check "json_str lone tab -> null" str_null $'\t'
 check "json_str empty -> null" jq -e --argjson o "{\"v\": $(call json_str "")}" '$o.v == null' <<<null
 check "json_str only invalid byte -> null" jq -e --argjson o "{\"v\": $(call json_str $'\xff')}" '$o.v == null' <<<null
 check "json_num abc -> null" test "$(call json_num abc)" = null
@@ -216,5 +218,30 @@ check "stub na: valid JSON" j . "$N"
 check "stub na: empty and [N/A] keep lspci model, null vram and driver" j '.gpus[0] == {"vendor": "nvidia", "model": "GeForce RTX 4060 Max-Q / Mobile", "vramMb": null, "driver": null}' "$N"
 check "stub na: no glxinfo -> dotted Mesa from vulkaninfo driverInfo" j '.gpus[1].driver == "mesa 24.2.8"' "$N"
 check "stub na: only CPU device -> supported false, apiVersion null" j '.vulkan == {"supported": false, "apiVersion": null}' "$N"
+
+# Case vf: lspci bus 10000:e1:00.0 (VMD) matches nvidia-smi 00010000:E1:00.0.
+stub vf lspci <<'EOF'
+cat <<'X'
+10000:e1:00.0 "VGA compatible controller [0300]" "NVIDIA Corporation [10de]" "Device [2d98]" -ra1 -p00 "Lenovo [17aa]" "Device [3c3d]"
+X
+EOF
+stub vf nvidia-smi <<'EOF'
+echo '00010000:E1:00.0, NVIDIA GeForce RTX 4070, 8188, 550.90.07'
+EOF
+V=$(fake vf)
+check "stub vf: one GPU, merged by 5-digit PCI domain" j '.gpus == [{"vendor": "nvidia", "model": "NVIDIA GeForce RTX 4070", "vramMb": 8188, "driver": "nvidia 550.90.07"}]' "$V"
+
+# Case nov: discrete GPU without an apiVersion line.
+stub nov vulkaninfo <<'EOF'
+cat <<'X'
+Devices:
+========
+GPU0:
+	deviceType         = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+	deviceName         = Test GPU
+X
+EOF
+NV=$(fake nov)
+check "stub nov: discrete GPU, no apiVersion -> supported true, apiVersion null" j '.vulkan == {"supported": true, "apiVersion": null}' "$NV"
 
 exit "$FAILED"

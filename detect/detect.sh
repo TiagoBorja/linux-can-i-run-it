@@ -16,13 +16,13 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # nvidia-smi, glxinfo and vulkaninfo can hang on a broken driver or without a display
 run() { if have timeout; then timeout 5 "$@"; else "$@"; fi; }
 
-# json_str VALUE: JSON string literal, or null when nothing is left after cleanup
+# json_str VALUE: JSON string literal, or null when only whitespace is left after cleanup
 json_str() {
   local s=$1
   s=${s//[[:cntrl:]]/ }  # control characters become spaces
   s=${s//[^[:print:]]/}  # drop everything that is not printable ASCII, so the JSON is always valid
   s=${s//\\/\\\\}; s=${s//\"/\\\"}
-  if [[ -z $s ]]; then echo null; else printf '"%s"\n' "$s"; fi
+  if [[ $s =~ ^[[:space:]]*$ ]]; then echo null; else printf '"%s"\n' "$s"; fi
 }
 
 # json_num VALUE: VALUE if it is a non-negative integer, else null
@@ -59,24 +59,25 @@ scan_vulkan() {
   fi
 }
 
-# apiVersion of the first device that is not a CPU. A CPU device is the lavapipe/llvmpipe software renderer.
+# Prints "found <apiVersion>" for the first device that is not a CPU, and nothing when there is none.
+# A CPU device is the lavapipe/llvmpipe software renderer. The apiVersion may be empty if it cannot be parsed.
 # In every device block, apiVersion comes before deviceType. The version is the first dotted number on the
 # line, which covers "1.3.280", "1.3.255 (4206847)" and the older "4206802 (1.3.274)".
-first_real_gpu_api() {
+first_real_gpu() {
   awk '
     /^GPU[0-9]+:/ { api = "" }
     /apiVersion/ && match($0, /[0-9]+\.[0-9]+(\.[0-9]+)?/) { api = substr($0, RSTART, RLENGTH) }
-    /deviceType/ && $0 !~ /DEVICE_TYPE_CPU/ { print api; exit }
+    /deviceType/ && $0 !~ /DEVICE_TYPE_CPU/ { print "found " api; exit }
   ' <<<"$VULKAN_OUT"
 }
 
 vulkan_json() {
-  local supported=null api=""
+  local supported=null api="" gpu
   case $VULKAN_STATUS in
     missing | 124) ;; # no tool, or it timed out: we do not know
     0)
-      api=$(first_real_gpu_api)
-      if [[ -n $api ]]; then supported=true; else supported=false; fi
+      gpu=$(first_real_gpu)
+      if [[ -n $gpu ]]; then supported=true; api=${gpu#found }; else supported=false; fi
       ;;
     *) supported=false ;;
   esac
@@ -107,7 +108,11 @@ sysfs_vram_mb() {
 }
 
 # nvidia-smi values that are unknown come out empty. It prints empty or [N/A] for them.
-known() { local v=${1# }; if [[ -n $v && $v != \[*\] ]]; then printf '%s' "$v"; fi; }
+known() {
+  local value=${1# }
+  if [[ -z $value || $value == \[*\] ]]; then return 0; fi
+  printf '%s' "$value"
+}
 
 # One line per NVIDIA GPU: bus id, name, vram_mb, driver version (joined with FIELD_SEP).
 nvidia_smi_rows() {
@@ -117,7 +122,8 @@ nvidia_smi_rows() {
     bus=${bus//[[:space:]]/}; bus=${bus,,}
     # A broken driver prints an error message on stdout. Real rows start with a PCI bus id.
     [[ $bus =~ ^[0-9a-f]+:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$ ]] || continue
-    if [[ $bus =~ ^[0-9a-f]{8}: ]]; then bus=${bus:4}; fi # nvidia-smi: 8-digit domain, lspci: 4 digits
+    # nvidia-smi pads the PCI domain to 8 digits, lspci to 4: strip leading zeros down to 4 digits
+    if [[ $bus =~ ^0*([0-9a-f]{4,}:.*)$ ]]; then bus=${BASH_REMATCH[1]}; fi
     printf '%s\n' "$bus$FIELD_SEP$(known "$name")$FIELD_SEP$(known "$vram")$FIELD_SEP$(known "$driver")"
   done < <(run nvidia-smi --query-gpu=pci.bus_id,name,memory.total,driver_version \
     --format=csv,noheader,nounits 2>/dev/null || true)
@@ -145,34 +151,44 @@ lspci_rows() {
 # One line per GPU: vendor, model, vram_mb, driver (joined with FIELD_SEP). An empty field means unknown.
 list_gpus() {
   local -A nvidia_smi=() # bus id -> "name FIELD_SEP vram FIELD_SEP driver"
-  local bus vendor model vram driver smi_name smi_driver rest mesa smi_rows pci_rows
+  local -A listed=()     # bus ids that lspci showed
+  local bus vendor model vram driver smi_name smi_driver rest mesa="" smi_rows pci_rows
 
   smi_rows=$(nvidia_smi_rows)
   pci_rows=$(lspci_rows)
   while IFS=$FIELD_SEP read -r bus rest; do
-    [[ -n $bus ]] || continue
-    nvidia_smi[$bus]=$rest
-    # nvidia-smi cards that lspci did not list (for example, lspci is missing)
-    if [[ $pci_rows != *"$bus$FIELD_SEP"* ]]; then pci_rows+=$'\n'"$bus${FIELD_SEP}nvidia$FIELD_SEP"; fi
+    if [[ -n $bus ]]; then nvidia_smi[$bus]=$rest; fi
   done <<<"$smi_rows"
+  # Looked up once, and only when an AMD or Intel card exists
+  if [[ $pci_rows == *"${FIELD_SEP}amd${FIELD_SEP}"* || $pci_rows == *"${FIELD_SEP}intel${FIELD_SEP}"* ]]; then
+    mesa=$(mesa_version)
+  fi
 
   while IFS=$FIELD_SEP read -r bus vendor model; do
     [[ -n $bus ]] || continue
+    listed[$bus]=1
     vram="" driver=""
     case $vendor in
       nvidia)
         IFS=$FIELD_SEP read -r smi_name vram smi_driver <<<"${nvidia_smi[$bus]-}"
-        model=${smi_name:-$model}
-        driver=${smi_driver:+nvidia $smi_driver}
+        if [[ -n $smi_name ]]; then model=$smi_name; fi
+        if [[ -n $smi_driver ]]; then driver="nvidia $smi_driver"; fi
         ;;
       amd | intel)
         vram=$(sysfs_vram_mb "$bus")
-        : "${mesa=$(mesa_version)}" # looks it up once, and only when an AMD or Intel card exists
-        driver=${mesa:+mesa $mesa}
+        if [[ -n $mesa ]]; then driver="mesa $mesa"; fi
         ;;
     esac
     printf '%s\n' "$vendor$FIELD_SEP$model$FIELD_SEP$vram$FIELD_SEP$driver"
   done <<<"$pci_rows"
+
+  # nvidia-smi cards that lspci did not list (for example, lspci is missing)
+  while IFS=$FIELD_SEP read -r bus smi_name vram smi_driver; do
+    [[ -n $bus && -z ${listed[$bus]-} ]] || continue
+    driver=""
+    if [[ -n $smi_driver ]]; then driver="nvidia $smi_driver"; fi
+    printf '%s\n' "nvidia$FIELD_SEP$smi_name$FIELD_SEP$vram$FIELD_SEP$driver"
+  done <<<"$smi_rows"
 }
 
 gpus_json() {

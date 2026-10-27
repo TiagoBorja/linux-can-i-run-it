@@ -23,11 +23,11 @@ Compare these values with game requirements. Use the distro and driver values fo
 | `distro.version` | `24.04` | `/etc/os-release`, VERSION_ID | Version-specific tips. |
 | `kernel` | `6.8.0-45-generic` | `uname -r` | Find kernel-specific driver issues. |
 | `vulkan.supported` | `true` | `vulkaninfo --summary` | Many games need Vulkan. Values: `true`, `false`, `null` (see below). |
-| `vulkan.apiVersion` | `1.3.275` | `vulkaninfo --summary`, apiVersion of the first GPU that is not a CPU device | Compare with the Vulkan version a game needs. `null` when `supported` is not `true`. |
+| `vulkan.apiVersion` | `1.3.275` | `vulkaninfo --summary`, apiVersion of the first GPU that is not a CPU device | Compare with the Vulkan version a game needs. `null` when `supported` is not `true`, or when the GPU device does not report it. |
 
 `vulkan.supported` values:
 
-- `true`: `vulkaninfo` runs and finds a GPU. The CPU device (lavapipe, `llvmpipe`) does not count.
+- `true`: `vulkaninfo` runs and it finds a GPU device. The CPU device (lavapipe, `llvmpipe`) does not count.
 - `false`: `vulkaninfo` fails, or it finds only the CPU device.
 - `null`: `vulkaninfo` is not installed, or it does not finish in 5 seconds.
 
@@ -44,12 +44,31 @@ The script never reads or prints:
 
 ## Missing tools
 
-If a tool is missing, its fields are `null`. The script still runs and exits with status 0.
+If a tool is missing, the fields it sets are `null`. The script still runs and exits with status 0.
 
 - `lscpu` sets the `cpu` fields. It comes with util-linux, which is installed by default.
-- `lspci` sets the GPU list.
-- `nvidia-smi` sets NVIDIA model, VRAM and driver. It comes with the NVIDIA driver.
-- `glxinfo` and `vulkaninfo` set the AMD and Intel driver and the `vulkan` fields.
+- `lspci` lists the GPUs. Without it, only GPUs found by `nvidia-smi` are listed.
+- `nvidia-smi` sets the NVIDIA model, VRAM and driver. It comes with the NVIDIA driver. Without it, an NVIDIA GPU is still listed from `lspci`, with `vramMb` and `driver` set to `null`.
+- `glxinfo` sets the Mesa driver for AMD and Intel. `vulkaninfo` is used as a fallback for it.
+- `vulkaninfo` sets the `vulkan` fields.
+
+`nvidia-smi`, `glxinfo` and `vulkaninfo` each stop after 5 seconds. A tool that times out counts as missing.
+
+## Null GPU fields
+
+A GPU field is `null` when its value is unknown:
+
+- `model`: `lspci` does not know the device name (it shows "Device"). For NVIDIA, the `nvidia-smi` name is used when it exists.
+- `vramMb`: the kernel or tool does not report VRAM. This happens with Intel shared memory, with an NVIDIA GPU and no `nvidia-smi`, or when `nvidia-smi` prints `[N/A]`.
+- `driver`: an NVIDIA GPU has no `nvidia-smi`. Or an AMD or Intel GPU has neither `glxinfo` nor `vulkaninfo` to report a Mesa version.
+
+## Text values
+
+Text fields are cleaned before they are printed:
+
+- Control characters (for example tabs and new lines) become spaces.
+- Non-ASCII characters are dropped. For example, `Radeon™` becomes `Radeon`.
+- A value with nothing left is `null`.
 
 Install the optional tools:
 
