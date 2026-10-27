@@ -70,7 +70,7 @@ Text fields are cleaned before they are printed:
 - Non-ASCII characters are dropped. For example, `Radeon™` becomes `Radeon`.
 - A value with nothing left is `null`.
 
-Install the optional tools:
+## Install the optional tools
 
 ```bash
 # Fedora
