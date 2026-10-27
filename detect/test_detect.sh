@@ -95,8 +95,15 @@ str_roundtrip() { # str_roundtrip INPUT: json_str output must decode back to INP
   jq -e --arg in "$1" --argjson o "{\"v\": $(call json_str "$1")}" '$o.v == $in' <<<null
 }
 check "json_str quote and backslash" str_roundtrip 'a"b\c'
-check "json_str newline, tab, CR, control char" str_roundtrip $'a\nb\tc\r\x01d'
+str_is() { # str_is INPUT EXPECTED: json_str output must be valid JSON decoding to EXPECTED
+  jq -e --arg ex "$2" --argjson o "{\"v\": $(call json_str "$1")}" '$o.v == $ex' <<<null
+}
+check "json_str control chars -> spaces" str_is $'a\nb\tc\r\x01d' "a b c  d"
+check "json_str invalid UTF-8 dropped" str_is $'GPU\xff\xfeX' "GPUX"
+check "json_str non-ASCII dropped" str_is "Radeon™ 680M" "Radeon 680M"
+check "json_str lone control char -> space" str_is $'\x01' " "
 check "json_str empty -> null" jq -e --argjson o "{\"v\": $(call json_str "")}" '$o.v == null' <<<null
+check "json_str only invalid byte -> null" jq -e --argjson o "{\"v\": $(call json_str $'\xff')}" '$o.v == null' <<<null
 check "json_num abc -> null" test "$(call json_num abc)" = null
 check "json_num empty -> null" test "$(call json_num "")" = null
 check "json_num 42 -> 42" test "$(call json_num 42)" = 42
@@ -111,7 +118,7 @@ stub() { # stub CASE TOOL: write stdin as the script of TOOL for CASE
   mkdir -p "$base/$1"; { echo '#!/bin/sh'; cat; } >"$base/$1/$2"; chmod +x "$base/$1/$2"
 }
 fake() { # fake CASE: run main with only the stubs of CASE and the base tools on PATH
-  ( PATH="$base/$1:$base/bin"; source "$DETECT"; PCI_SYS="$base/$1/sys"; main ) 2>/dev/null
+  ( PATH="$base/$1:$base/bin"; export PCI_SYS="$base/$1/sys"; source "$DETECT"; main ) 2>/dev/null
 }
 LSPCI_NV0='0000:01:00.0 "VGA compatible controller [0300]" "NVIDIA Corporation [10de]" "AD107M [GeForce RTX 4060 Max-Q / Mobile] [28e0]" -ra1 -p00 "Lenovo [17aa]" "Device [3c3d]"'
 LSPCI_AMD='0000:65:00.0 "Display controller [0380]" "Advanced Micro Devices, Inc. [AMD/ATI] [1002]" "Phoenix1 [15bf]" -rc4 -p00 "Lenovo [17aa]" "Device [3c3d]"'
