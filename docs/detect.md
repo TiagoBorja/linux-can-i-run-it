@@ -22,8 +22,14 @@ Compare these values with game requirements. Use the distro and driver values fo
 | `distro.name` | `Pop!_OS` | `/etc/os-release`, NAME | Show the distro name. |
 | `distro.version` | `24.04` | `/etc/os-release`, VERSION_ID | Version-specific tips. |
 | `kernel` | `6.8.0-45-generic` | `uname -r` | Find kernel-specific driver issues. |
-| `vulkan.supported` | `true` | `vulkaninfo --summary` | Many games need Vulkan. |
-| `vulkan.apiVersion` | `1.3.275` | `vulkaninfo --summary`, apiVersion | Compare with the Vulkan version a game needs. |
+| `vulkan.supported` | `true` | `vulkaninfo --summary` | Many games need Vulkan. Values: `true`, `false`, `null` (see below). |
+| `vulkan.apiVersion` | `1.3.275` | `vulkaninfo --summary`, apiVersion of the first GPU that is not a CPU device | Compare with the Vulkan version a game needs. `null` when `supported` is not `true`. |
+
+`vulkan.supported` values:
+
+- `true`: `vulkaninfo` runs and finds a GPU. The CPU device (lavapipe, `llvmpipe`) does not count.
+- `false`: `vulkaninfo` fails, or it finds only the CPU device.
+- `null`: `vulkaninfo` is not installed, or it does not finish in 5 seconds.
 
 ## What the script never reads
 

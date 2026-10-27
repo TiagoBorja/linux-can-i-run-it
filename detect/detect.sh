@@ -28,6 +28,19 @@ json_num() { if [[ $1 =~ ^[0-9]+$ ]]; then echo "$1"; else echo null; fi; }
 
 lscpu_get() { awk -F: -v k="$1" '$1 == k { sub(/^[^:]*: */, ""); print; exit }' <<<"$LSCPU"; }
 os_get() { sed -n "s/^$1=//p" /etc/os-release 2>/dev/null | head -1 | tr -d "\"'" || true; }
+# vk_gpu: reads vulkaninfo --summary on stdin. Prints "gpu <apiVersion>" for the first device
+# that is not a CPU (lavapipe/llvmpipe). Prints nothing when there is no such device.
+vk_gpu() {
+  awk '
+    function flush() {
+      if (seen && type !~ /PHYSICAL_DEVICE_TYPE_CPU/) { print "gpu " api; found = 1; exit }
+      seen = 0; api = ""; type = ""
+    }
+    /^GPU[0-9]+:/ { flush(); seen = 1; next }
+    seen && /apiVersion/ && match($0, /[0-9]+\.[0-9]+(\.[0-9]+)?/) { api = substr($0, RSTART, RLENGTH) }
+    seen && /deviceType/ { type = $0 }
+    END { if (!found) flush() }'
+}
 mesa_from() { sed -n 's/.*Mesa \([0-9][0-9.]*[0-9]\).*/\1/p' | head -1 || true; }
 
 # Sets MESA (e.g. "24.0.5") once. Called only when an AMD or Intel GPU exists.
@@ -51,12 +64,13 @@ main() {
   ram=$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo 2>/dev/null || true)
   disk=$(df -Pk "${HOME:-.}" 2>/dev/null | awk 'NR == 2 { print int($4 / 1024) }' || true)
 
-  # Vulkan: no tool -> unknown (null), tool fails -> false
-  local vk_supported=null vk_api="" rc=0
+  # Vulkan: no tool or timeout (124) -> unknown (null), tool fails or finds only a CPU device -> false
+  local vk_supported=null vk_api="" rc=0 vk_dev
   if have vulkaninfo; then
     VK=$(run vulkaninfo --summary 2>/dev/null) || rc=$?
-    if ((rc == 0)); then vk_supported=true; else vk_supported=false; fi
-    vk_api=$(sed -n 's/.*apiVersion *= *\([0-9][0-9.]*\).*/\1/p' <<<"$VK" | head -1 || true)
+    vk_dev=$(vk_gpu <<<"$VK")
+    if ((rc == 0)) && [[ -n $vk_dev ]]; then vk_supported=true; vk_api=${vk_dev#gpu }
+    elif ((rc != 124)); then vk_supported=false; fi
   fi
 
   # GPUs, one entry per index in these arrays
