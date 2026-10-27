@@ -7,7 +7,7 @@ set -euo pipefail
 export LC_ALL=C # lscpu output is translated otherwise
 
 have() { command -v "$1" >/dev/null 2>&1; }
-# glxinfo and vulkaninfo can hang without a display, so give them 5 seconds
+# glxinfo and vulkaninfo can hang without a display, and nvidia-smi with a broken driver, so give them 5 seconds
 run() { if have timeout; then timeout 5 "$@"; else "$@"; fi; }
 
 # json_str VALUE: JSON string literal, or null when VALUE is empty
@@ -93,12 +93,17 @@ main() {
     local nb name mem drv
     while IFS=, read -r nb name mem drv; do
       nb=${nb//[[:space:]]/}; nb=${nb,,}
-      [[ -n $nb ]] || continue
+      [[ $nb =~ ^[0-9a-f]+:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]$ ]] || continue # skip error text from a broken driver
+      nb=${nb#0000} # nvidia-smi uses an 8-digit PCI domain, lspci uses 4
       i=-1
-      for f in "${!gb[@]}"; do if [[ ${gb[f]: -7} == "${nb: -7}" ]]; then i=$f; fi; done
-      if ((i < 0)); then i=${#gb[@]}; gv[i]=nvidia; gb[i]=$nb; fi
-      gm[i]=${name# }; gr[i]=${mem// /}; gd[i]="nvidia ${drv// /}"
-    done < <(nvidia-smi --query-gpu=pci.bus_id,name,memory.total,driver_version \
+      for f in "${!gb[@]}"; do if [[ ${gb[f]} == "$nb" ]]; then i=$f; break; fi; done
+      if ((i < 0)); then i=${#gb[@]}; gv[i]=nvidia; gm[i]=""; gd[i]=""; gb[i]=$nb; fi
+      name=${name# }; drv=${drv// /}
+      # nvidia-smi prints [N/A] or [Not Supported] for unknown values
+      if [[ -n $name && $name != \[*\] ]]; then gm[i]=$name; fi
+      if [[ -n $drv && $drv != \[*\] ]]; then gd[i]="nvidia $drv"; fi
+      gr[i]=${mem// /}
+    done < <(run nvidia-smi --query-gpu=pci.bus_id,name,memory.total,driver_version \
       --format=csv,noheader,nounits 2>/dev/null || true)
   fi
 
