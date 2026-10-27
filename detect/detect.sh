@@ -28,7 +28,7 @@ json_num() { if [[ $1 =~ ^[0-9]+$ ]]; then echo "$1"; else echo null; fi; }
 
 lscpu_get() { awk -F: -v k="$1" '$1 == k { sub(/^[^:]*: */, ""); print; exit }' <<<"$LSCPU"; }
 os_get() { sed -n "s/^$1=//p" /etc/os-release 2>/dev/null | head -1 | tr -d "\"'" || true; }
-mesa_from() { sed -n 's/.*Mesa \([0-9][^ ]*\).*/\1/p' | head -1 || true; }
+mesa_from() { sed -n 's/.*Mesa \([0-9][0-9.]*[0-9]\).*/\1/p' | head -1 || true; }
 
 # Sets MESA (e.g. "24.0.5") once. Called only when an AMD or Intel GPU exists.
 load_mesa() {
