@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "cpu": { "model": null, "cores": null, "threads": null },
+  "gpus": [],
+  "ramMb": null,
+  "diskFreeMb": null,
+  "distro": { "id": null, "name": null, "version": null },
+  "kernel": null,
+  "vulkan": { "supported": null, "apiVersion": null }
+}

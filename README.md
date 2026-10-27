@@ -15,3 +15,15 @@ bash detect/detect.sh
 ```
 
 It prints your hardware specs as JSON. It does not send data. See [What the script collects](docs/detect.md).
+
+## Backend
+
+The backend stores specs under an anonymous code. It needs Java 21 and Docker.
+
+```bash
+cd backend && docker compose up -d && ./mvnw spring-boot:run
+```
+
+Run the tests with `./mvnw verify`. The tests need Docker for Testcontainers.
+
+See [Specs API](docs/api.md).
