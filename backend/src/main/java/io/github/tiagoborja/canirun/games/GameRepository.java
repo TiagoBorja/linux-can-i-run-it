@@ -25,7 +25,7 @@ class GameRepository {
 
 	// shortcut: no paging, add it when the seed passes a few hundred games.
 	List<GameSummary> findAll() {
-		return jdbc.query("select slug, name from game order by name", GAME);
+		return jdbc.query("select slug, name from game order by name, slug", GAME);
 	}
 
 	Optional<GameSummary> findBySlug(String slug) {

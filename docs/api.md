@@ -37,7 +37,7 @@ Not found: `404 Not Found`. The code is unknown or expired.
 
 List the games in the seed data.
 
-Success response: `200 OK`. The body is an array. The games are sorted by `name`. The list has no paging.
+Success response: `200 OK`. The body is an array. The games are sorted by `name`, then by `slug`. The list has no paging.
 
 ```json
 [
