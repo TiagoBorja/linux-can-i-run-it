@@ -14,10 +14,10 @@ import jakarta.validation.constraints.Size;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
-/** A text value of a report: 200 characters maximum and no NUL character. Postgres jsonb rejects NUL. */
+/** A text value of a report: 200 characters maximum and no NUL character or lone surrogate. Postgres jsonb rejects NUL. */
 @Size(max = 200)
 @Pattern(regexp = "[^\\x00]*")
-@Constraint(validatedBy = {})
+@Constraint(validatedBy = TextValidator.class)
 @Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE, TYPE_USE })
 @Retention(RUNTIME)
 @interface Text {

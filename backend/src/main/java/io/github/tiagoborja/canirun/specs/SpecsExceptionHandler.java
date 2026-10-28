@@ -1,5 +1,6 @@
 package io.github.tiagoborja.canirun.specs;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Clock;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -22,6 +23,7 @@ class SpecsExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(SpecsExceptionHandler.class);
 
+	@Schema(name = "ApiError")
 	record ApiError(int status, String error, String message, Instant timestamp) {
 	}
 

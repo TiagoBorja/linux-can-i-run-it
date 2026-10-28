@@ -74,7 +74,7 @@ Limits for `POST /api/specs`:
 - Numbers: 0 or more.
 - Number maximums: `cpu.cores` and `cpu.threads` 4096, `ramMb` 16777216, `diskFreeMb` 1000000000, `gpus[].vramMb` 1048576.
 - Numbers must be JSON integers. Strings such as `"123"` and decimals such as `1.5` are rejected.
-- Strings must be JSON strings. They must not contain the NUL character (`\u0000`).
+- Strings must be JSON strings. They must not contain the NUL character (`\u0000`). They must not contain a lone surrogate (an unpaired `\ud800` to `\udfff` escape). A valid surrogate pair is accepted.
 - Nullable fields may be `null`. For example, `null` means a tool was missing.
 - Unknown fields are rejected.
 

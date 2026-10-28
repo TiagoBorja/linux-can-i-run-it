@@ -165,6 +165,23 @@ class SpecsApiIT extends AbstractIT {
     }
 
     @Test
+    void shouldReturnValidationFailedWithoutStoringWhenStringHasLoneHighSurrogate() throws Exception {
+        assertBadRequest(report("\"a\\ud800b\"", gpus(0)), "VALIDATION_FAILED");
+        assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isZero();
+    }
+
+    @Test
+    void shouldReturnValidationFailedWithoutStoringWhenStringHasLoneLowSurrogate() throws Exception {
+        assertBadRequest(report("\"a\\udc00b\"", gpus(0)), "VALIDATION_FAILED");
+        assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isZero();
+    }
+
+    @Test
+    void shouldReturnSameSpecsWhenStringHasValidSurrogatePair() throws Exception {
+        assertRoundTrip(report("\"a\\ud83d\\ude00b\"", gpus(0)));
+    }
+
+    @Test
     void shouldReturnValidationFailedWhenTopLevelFieldIsUnknown() throws Exception {
         assertBadRequest(fixture("all-null.json").replace("\"gpus\"", "\"" + MARKER + "\": 1, \"gpus\""),
                 "VALIDATION_FAILED");
