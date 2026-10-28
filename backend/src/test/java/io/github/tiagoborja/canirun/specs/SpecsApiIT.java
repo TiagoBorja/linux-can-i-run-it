@@ -2,13 +2,18 @@ package io.github.tiagoborja.canirun.specs;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,10 +21,14 @@ import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
@@ -33,13 +42,15 @@ class SpecsApiIT extends AbstractIT {
     private MockMvc mvc;
     @Autowired
     private JdbcTemplate jdbc;
+    @MockitoSpyBean
+    private CodeGenerator codeGenerator;
 
     @AfterEach
     void tearDown() {
         jdbc.update("delete from spec_report");
     }
 
-    private static String fixture(String name) throws Exception {
+    static String fixture(String name) throws Exception {
         return Files.readString(Path.of("src/test/resources/specs/" + name), StandardCharsets.UTF_8);
     }
 
@@ -78,6 +89,7 @@ class SpecsApiIT extends AbstractIT {
         assertThat(Duration.between(Instant.now().plus(Duration.ofDays(30)), expiresAt).abs())
                 .isLessThan(Duration.ofMinutes(1));
         mvc.perform(get("/api/specs/" + code)).andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(content().json(json, true));
     }
 
@@ -108,6 +120,12 @@ class SpecsApiIT extends AbstractIT {
     }
 
     @Test
+    void shouldReturnValidationFailedWhenSchemaVersionIsZero() throws Exception {
+        assertBadRequest(fixture("all-null.json").replace("\"schemaVersion\": 1", "\"schemaVersion\": 0"),
+                "VALIDATION_FAILED");
+    }
+
+    @Test
     void shouldReturnValidationFailedWhenSchemaVersionIsMissing() throws Exception {
         assertBadRequest(fixture("all-null.json").replace("\"schemaVersion\": 1,", ""), "VALIDATION_FAILED");
     }
@@ -116,6 +134,34 @@ class SpecsApiIT extends AbstractIT {
     void shouldReturnValidationFailedWhenRamMbHasWrongType() throws Exception {
         assertBadRequest(fixture("all-null.json").replace("\"ramMb\": null", "\"ramMb\": \"lots" + MARKER + "\""),
                 "VALIDATION_FAILED");
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "\"ramMb\": null | \"ramMb\": \"123\"",
+            "\"ramMb\": null | \"ramMb\": 1.5",
+            "\"ramMb\": null | \"ramMb\": true",
+            "\"ramMb\": null | \"ramMb\": \"\"",
+            "\"kernel\": null | \"kernel\": 123",
+            "\"kernel\": null | \"kernel\": 1.5",
+            "\"kernel\": null | \"kernel\": true",
+            "\"supported\": null | \"supported\": \"true\"",
+            "\"supported\": null | \"supported\": 1" })
+    void shouldReturnValidationFailedWhenScalarHasWrongType(String field, String wrongType) throws Exception {
+        assertBadRequest(fixture("all-null.json").replace(field, wrongType), "VALIDATION_FAILED");
+    }
+
+    @Test
+    void shouldReturnValidationFailedWhenIntegerOverflows() throws Exception {
+        assertBadRequest(fixture("all-null.json").replace("\"ramMb\": null", "\"ramMb\": 99999999999"),
+                "VALIDATION_FAILED");
+    }
+
+    @Test
+    void shouldReturnValidationFailedWithoutStoringWhenStringHasNul() throws Exception {
+        assertBadRequest(fixture("all-null.json").replace("\"kernel\": null", "\"kernel\": \"a\\u0000b\""),
+                "VALIDATION_FAILED");
+        assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isZero();
     }
 
     @Test
@@ -184,6 +230,120 @@ class SpecsApiIT extends AbstractIT {
     @Test
     void shouldReturnValidationFailedWhenCoresExceedMax() throws Exception {
         assertBadRequest(report("null", gpus(0)).replace("\"cores\":8", "\"cores\":4097"), "VALIDATION_FAILED");
+    }
+
+    /** Each row: the field in detect-sample.json and its maximum. */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "\"threads\": 16 | \"threads\": | 4096",
+            "\"vramMb\": 8151 | \"vramMb\": | 1048576",
+            "\"ramMb\": 15163 | \"ramMb\": | 16777216",
+            "\"diskFreeMb\": 106261 | \"diskFreeMb\": | 1000000000" })
+    void shouldAcceptMaxAndRejectMaxPlusOneWhenNumberIsAtLimit(String field, String key, long max) throws Exception {
+        String sample = fixture("detect-sample.json");
+        postSpecs(sample.replace(field, key + " " + max)).andExpect(status().isCreated());
+        assertBadRequest(sample.replace(field, key + " " + (max + 1)), "VALIDATION_FAILED");
+    }
+
+    /** Each row: a string field in detect-sample.json. */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "\"AMD Ryzen 7 170 with Radeon Graphics\"",
+            "\"NVIDIA GeForce RTX 5050 Laptop GPU\"",
+            "\"nvidia 595.104.02\"",
+            "\"pop\"",
+            "\"Pop!_OS\"",
+            "\"24.04\"",
+            "\"7.2.6-76070206-generic\"",
+            "\"apiVersion\": null" })
+    void shouldAccept200AndReject201CharsWhenStringIsAtLimit(String value) throws Exception {
+        String sample = fixture("detect-sample.json");
+        String prefix = value.startsWith("\"apiVersion\"") ? "\"apiVersion\": " : "";
+        postSpecs(sample.replace(value, prefix + "\"" + "a".repeat(200) + "\"")).andExpect(status().isCreated());
+        assertBadRequest(sample.replace(value, prefix + "\"" + "a".repeat(201) + "\""), "VALIDATION_FAILED");
+    }
+
+    @Test
+    void shouldReturnCreatedWhenCodeCollidesOnce() throws Exception {
+        insertActive("AAAAAAAAAA");
+        doReturn("AAAAAAAAAA").doCallRealMethod().when(codeGenerator).next();
+        postSpecs(fixture("all-null.json")).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.not("AAAAAAAAAA")));
+        verify(codeGenerator, times(2)).next();
+        assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void shouldReturnInternalErrorWithoutDetailsWhenCodeCollidesThreeTimes() throws Exception {
+        insertActive("AAAAAAAAAA");
+        doReturn("AAAAAAAAAA").when(codeGenerator).next();
+        postSpecs(fixture("all-null.json")).andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.error").value("INTERNAL_ERROR"))
+                .andExpect(jsonPath("$.message").value("An unexpected error occurred."))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unique"))));
+        verify(codeGenerator, times(3)).next();
+        assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isEqualTo(1);
+    }
+
+    private void insertActive(String code) {
+        jdbc.update("insert into spec_report (id, code, payload, schema_version, created_at, expires_at) "
+                + "values (gen_random_uuid(), ?, '{}'::jsonb, 1, now(), now() + interval '1 day')", code);
+    }
+
+    @Test
+    void shouldReturnUnsupportedMediaTypeWhenContentTypeIsNotJson() throws Exception {
+        assertFrameworkError(mvc.perform(post("/api/specs").contentType(MediaType.TEXT_PLAIN).content("x")),
+                415, "UNSUPPORTED_MEDIA_TYPE");
+    }
+
+    @Test
+    void shouldReturnMethodNotAllowedWhenMethodIsPut() throws Exception {
+        assertFrameworkError(mvc.perform(put("/api/specs").contentType(MediaType.APPLICATION_JSON).content("{}")),
+                405, "METHOD_NOT_ALLOWED");
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenPathIsUnknown() throws Exception {
+        assertFrameworkError(mvc.perform(get("/api/unknown")), 404, "NOT_FOUND");
+    }
+
+    private static void assertFrameworkError(ResultActions result, int status, String error) throws Exception {
+        result.andExpect(status().is(status))
+                .andExpect(jsonPath("$.status").value(status))
+                .andExpect(jsonPath("$.error").value(error))
+                .andExpect(jsonPath("$.message").value("Request failed."))
+                .andExpect(jsonPath("$.timestamp").isString());
+    }
+
+    @Test
+    void shouldAcceptBodyWhenItIsExactly16384Bytes() throws Exception {
+        postSpecs(padded(BodySizeLimitFilter.MAX_BYTES)).andExpect(status().isCreated());
+    }
+
+    @Test
+    void shouldReturnPayloadTooLargeWhenBodyIs16385Bytes() throws Exception {
+        assertPayloadTooLarge(postSpecs(padded(BodySizeLimitFilter.MAX_BYTES + 1)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "/api/specs;x=1", "/api/%73pecs" })
+    void shouldReturnPayloadTooLargeWhenPathIsAVariantOfSpecs(String path) throws Exception {
+        assertPayloadTooLarge(mvc.perform(post(URI.create(path)).contentType(MediaType.APPLICATION_JSON)
+                .content(padded(BodySizeLimitFilter.MAX_BYTES + 1))));
+    }
+
+    /** A valid report padded with leading spaces to exactly the given size in bytes. */
+    static String padded(int bytes) throws Exception {
+        String json = fixture("all-null.json");
+        return " ".repeat(bytes - json.getBytes(StandardCharsets.UTF_8).length) + json;
+    }
+
+    static void assertPayloadTooLarge(ResultActions result) throws Exception {
+        result.andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.status").value(413))
+                .andExpect(jsonPath("$.error").value("PAYLOAD_TOO_LARGE"))
+                .andExpect(jsonPath("$.timestamp").isString());
     }
 
     @Test

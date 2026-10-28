@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
+import org.springframework.web.util.UrlPathHelper;
 
 /**
  * Limits the body of POST /api/specs to 16384 bytes. It checks Content-Length first. It also counts the
@@ -30,9 +31,14 @@ class BodySizeLimitFilter extends OncePerRequestFilter {
 		this.resolver = resolver;
 	}
 
+	/**
+	 * Matches the decoded path without path parameters, as Spring MVC does. So "/api/specs;x=1" and
+	 * "/api/%73pecs" cannot skip the limit.
+	 */
 	@Override
 	protected boolean shouldNotFilter(HttpServletRequest request) {
-		return !("POST".equals(request.getMethod()) && "/api/specs".equals(request.getRequestURI()));
+		return !("POST".equals(request.getMethod())
+				&& "/api/specs".equals(UrlPathHelper.defaultInstance.getPathWithinApplication(request)));
 	}
 
 	@Override

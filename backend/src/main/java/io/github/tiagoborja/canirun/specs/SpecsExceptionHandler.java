@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import tools.jackson.core.exc.InputCoercionException;
 import tools.jackson.databind.DatabindException;
 
 /** Fixed messages only. Never echo input, field values or exception messages. */
@@ -37,7 +38,7 @@ class SpecsExceptionHandler {
 				return tooLarge();
 			}
 		}
-		if (ex.getCause() instanceof DatabindException) {
+		if (ex.getCause() instanceof DatabindException || ex.getCause() instanceof InputCoercionException) {
 			return validationFailed();
 		}
 		return build(HttpStatus.BAD_REQUEST, "MALFORMED_JSON", "Request body is not valid JSON.");

@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.regex.Pattern;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +25,7 @@ class SpecsController {
 	private static final Pattern CODE = Pattern.compile("^[0-9A-HJKMNP-TV-Z]{10}$");
 	private static final Duration TTL = Duration.ofDays(30);
 	private static final int MAX_TRIES = 3;
+	private static final String CODE_CONSTRAINT = "spec_report_code_key";
 
 	record Created(String code, Instant expiresAt) {
 	}
@@ -53,10 +55,19 @@ class SpecsController {
 				repository.saveAndFlush(new SpecReport(code, payload, request.schemaVersion(), now, expiresAt));
 				return ResponseEntity.created(URI.create("/api/specs/" + code)).body(new Created(code, expiresAt));
 			} catch (DataIntegrityViolationException e) {
-				// unique code collision: try a new code
+				if (!isCodeCollision(e)) {
+					throw e;
+				}
 			}
 		}
 		throw new IllegalStateException("Could not create a unique code");
+	}
+
+	/** True only for a duplicate code. Other integrity errors are not retried. */
+	private static boolean isCodeCollision(DataIntegrityViolationException e) {
+		return e.getCause() instanceof ConstraintViolationException cve
+				&& cve.getKind() == ConstraintViolationException.ConstraintKind.UNIQUE
+				&& CODE_CONSTRAINT.equals(cve.getConstraintName());
 	}
 
 	@GetMapping("/{code}")
