@@ -12,7 +12,7 @@ create table gpu_tier (
 );
 
 create table game (
-    slug varchar(100) primary key,
+    slug varchar(100) primary key check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
     name varchar(200) not null
 );
 
@@ -22,9 +22,9 @@ create table game_requirement (
     level          varchar(11)  not null check (level in ('minimum', 'recommended')),
     cpu_key        varchar(60)  references cpu_tier (key),
     gpu_key        varchar(60)  references gpu_tier (key),
-    vram_mb        int,
-    ram_mb         int,
-    disk_mb        int,
-    vulkan_version varchar(10),
+    vram_mb        int check (vram_mb > 0),
+    ram_mb         int check (ram_mb > 0),
+    disk_mb        int check (disk_mb > 0),
+    vulkan_version varchar(10) check (vulkan_version ~ '^[0-9]{1,9}\.[0-9]{1,9}(\.[0-9]{1,9})?$'),
     primary key (game_slug, level)
 );

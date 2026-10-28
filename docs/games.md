@@ -20,6 +20,10 @@ The game data lives in one seed file. The API reads it for the game list and the
 - `level`: only `minimum` or `recommended`.
 - `game_requirement.cpu_key` and `gpu_key`: keys from the tier tables. They can be `null`.
 - Numeric columns and `vulkan_version` can be `null`. `null` means the store page states no requirement.
+- `vram_mb`, `ram_mb` and `disk_mb`: an integer above 0, or `null`.
+- `vulkan_version`: `major.minor` or `major.minor.patch`, for example `1.3`, or `null`.
+- `game.slug`: must match `^[a-z0-9]+(-[a-z0-9]+)*$`.
+- The database rejects a row that breaks one of these rules.
 - Each game needs both levels: `minimum` and `recommended`.
 - For each numeric column and tier, `minimum` must be less than or equal to `recommended`.
 
