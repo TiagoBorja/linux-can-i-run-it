@@ -8,7 +8,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 abstract class AbstractIT {
 
     @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
     static {
         POSTGRES.start();
