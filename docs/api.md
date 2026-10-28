@@ -27,9 +27,16 @@ Success response: `201 Created`
 
 Read a stored report.
 
-Success response: `200 OK`. The body is the stored schema v1 report.
+The code is upper-case only. A lower-case code gives `404 Not Found`.
+
+Success response: `200 OK`. The body is the stored schema v1 report. The values are the same as in the posted report. The key order and the whitespace can change.
 
 Not found: `404 Not Found`. The code is unknown or expired.
+
+### API description
+
+- `GET /swagger-ui.html`: an interactive page that shows the endpoints.
+- `GET /v3/api-docs`: the OpenAPI description as JSON.
 
 ## Errors
 
@@ -54,13 +61,20 @@ Every error uses the same body shape:
 | `400` | `MALFORMED_JSON` | The body is not valid JSON. |
 | `400` | `VALIDATION_FAILED` | The `schemaVersion` is unknown. A field has the wrong type. The body has an unknown field. A value is out of range. |
 | `404` | `SPECS_NOT_FOUND` | The code is unknown or expired. |
-| `413` | `PAYLOAD_TOO_LARGE` | The body is larger than 16 KB. |
+| `404` | `NOT_FOUND` | The path is unknown. The message is `Request failed.` |
+| `405` | `METHOD_NOT_ALLOWED` | The path does not accept the HTTP method. The message is `Request failed.` |
+| `413` | `PAYLOAD_TOO_LARGE` | The body is larger than 16 KB (16384 bytes). |
+| `415` | `UNSUPPORTED_MEDIA_TYPE` | The `Content-Type` is not `application/json`. The message is `Request failed.` |
+| `500` | `INTERNAL_ERROR` | The server has an unexpected error. The message does not show the cause. |
 
 Limits for `POST /api/specs`:
 
 - Strings: 200 characters maximum.
 - `gpus`: 8 items maximum.
 - Numbers: 0 or more.
+- Number maximums: `cpu.cores` and `cpu.threads` 4096, `ramMb` 16777216, `diskFreeMb` 1000000000, `gpus[].vramMb` 1048576.
+- Numbers must be JSON integers. Strings such as `"123"` and decimals such as `1.5` are rejected.
+- Strings must be JSON strings. They must not contain the NUL character (`\u0000`).
 - Nullable fields may be `null`. For example, `null` means a tool was missing.
 - Unknown fields are rejected.
 
