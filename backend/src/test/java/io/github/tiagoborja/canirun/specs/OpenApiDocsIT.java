@@ -25,6 +25,8 @@ class OpenApiDocsIT extends AbstractIT {
 
     private static final String POST = "$.paths['/api/specs'].post";
     private static final String GET = "$.paths['/api/specs/{code}'].get";
+    private static final String GAMES = "$.paths['/api/games'].get";
+    private static final String COMPARE = "$.paths['/api/specs/{code}/games/{slug}'].get";
 
     @Autowired
     private MockMvc mvc;
@@ -90,6 +92,106 @@ class OpenApiDocsIT extends AbstractIT {
                 "cpu.threads", "gpus", "gpus.vendor", "gpus.model", "gpus.vramMb", "gpus.driver", "ramMb",
                 "diskFreeMb", "distro", "distro.id", "distro.name", "distro.version", "kernel", "vulkan",
                 "vulkan.supported", "vulkan.apiVersion");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { GAMES, COMPARE })
+    void shouldTagAndSummarizeGamesOperation(String op) {
+        assertThat(docs.<List<String>>read(op + ".tags")).containsExactly("Games");
+        assertThat(docs.<String>read(op + ".summary")).isNotBlank();
+        assertThat(docs.<Map<String, Object>>read(op + ".responses['200'].content").keySet())
+                .contains("application/json");
+    }
+
+    @Test
+    void shouldListGamesResponses() {
+        assertThat(docs.<Map<String, Object>>read(GAMES + ".responses").keySet())
+                .containsExactlyInAnyOrder("200", "500");
+        assertThat(jsonRef(GAMES, "500")).endsWith("/ApiError");
+    }
+
+    @Test
+    void shouldListCompareResponses() {
+        assertThat(docs.<Map<String, Object>>read(COMPARE + ".responses").keySet())
+                .containsExactlyInAnyOrder("200", "404", "500");
+        assertThat(jsonRef(COMPARE, "404")).endsWith("/ApiError");
+        assertThat(jsonRef(COMPARE, "500")).endsWith("/ApiError");
+    }
+
+    @Test
+    void shouldDocumentCompareGetPathParameters() {
+        assertThat(docs.<List<String>>read(COMPARE + ".parameters[?(@.in == 'path')].name"))
+                .containsExactlyInAnyOrder("code", "slug");
+    }
+
+    @Test
+    void shouldMentionGameNotFoundInApiErrorCodes() {
+        assertThat(docs.<String>read("$.components.schemas.ApiError.properties.error.description"))
+                .contains("SPECS_NOT_FOUND", "GAME_NOT_FOUND");
+    }
+
+    @Test
+    void shouldDescribeEveryGameListField() {
+        String schema = responseSchema(GAMES);
+        assertThat(schema).isNotNull();
+        List<String> checked = new ArrayList<>();
+        assertResponseFieldsDescribed(schema, "", checked);
+        assertThat(checked).containsExactlyInAnyOrder("slug", "name");
+    }
+
+    @Test
+    void shouldDescribeEveryCompareResponseField() {
+        String schema = responseSchema(COMPARE);
+        assertThat(schema).isNotNull();
+        List<String> checked = new ArrayList<>();
+        assertResponseFieldsDescribed(schema, "", checked);
+
+        List<String> expected = new ArrayList<>(List.of("game", "game.slug", "game.name"));
+        for (String level : List.of("minimum", "recommended")) {
+            expected.addAll(List.of(level, level + ".result", level + ".parts"));
+            for (String part : List.of("cpu", "gpu", "vram", "ram", "disk", "vulkan")) {
+                expected.addAll(List.of(level + ".parts." + part, level + ".parts." + part + ".result",
+                        level + ".parts." + part + ".required"));
+            }
+        }
+        assertThat(checked).containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    /** Name of the schema of a 200 response. A list response gives the schema of its items. */
+    @SuppressWarnings("unchecked")
+    private String responseSchema(String op) {
+        Map<String, Object> schema = docs.read(op + ".responses['200'].content['application/json'].schema");
+        Object ref = schema.get("$ref");
+        if (ref == null && schema.get("items") instanceof Map) {
+            ref = ((Map<String, Object>) schema.get("items")).get("$ref");
+        }
+        return ref == null ? null : schemaName(ref.toString());
+    }
+
+    /** Checks that each property of the schema, and of the schemas it references, has a description. */
+    @SuppressWarnings("unchecked")
+    private void assertResponseFieldsDescribed(String schemaName, String prefix, List<String> checked) {
+        Map<String, Object> schema = docs.read("$.components.schemas." + schemaName);
+        Map<String, Map<String, Object>> properties = (Map<String, Map<String, Object>>) schema.get("properties");
+        if (properties == null) {
+            return;
+        }
+        properties.forEach((field, property) -> {
+            String name = prefix + field;
+            checked.add(name);
+            Object items = property.get("items");
+            Object ref = items instanceof Map ? ((Map<String, Object>) items).get("$ref") : property.get("$ref");
+            String own = (String) property.get("description");
+            String description = own != null && !own.isBlank() ? own : null;
+            if (description == null && ref != null) {
+                Map<String, Object> target = docs.read("$.components.schemas." + schemaName(ref.toString()));
+                description = (String) target.get("description");
+            }
+            assertThat(description).as(name).isNotBlank();
+            if (ref != null) {
+                assertResponseFieldsDescribed(schemaName(ref.toString()), name + ".", checked);
+            }
+        });
     }
 
     @Test

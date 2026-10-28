@@ -1,6 +1,8 @@
-package io.github.tiagoborja.canirun.specs;
+package io.github.tiagoborja.canirun;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import io.github.tiagoborja.canirun.games.GameNotFoundException;
+import io.github.tiagoborja.canirun.specs.PayloadTooLargeException;
+import io.github.tiagoborja.canirun.specs.SpecsNotFoundException;
 import java.time.Clock;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -19,21 +21,13 @@ import tools.jackson.databind.DatabindException;
 
 /** Fixed messages only. Never echo input, field values or exception messages. */
 @RestControllerAdvice
-class SpecsExceptionHandler {
+class ApiExceptionHandler {
 
-	private static final Logger log = LoggerFactory.getLogger(SpecsExceptionHandler.class);
-
-	@Schema(name = "ApiError", description = "Error body. The same shape for every error.")
-	record ApiError(
-			@Schema(description = "HTTP status code.", example = "400") int status,
-			@Schema(description = "Fixed error code: MALFORMED_JSON, VALIDATION_FAILED, PAYLOAD_TOO_LARGE, SPECS_NOT_FOUND, INTERNAL_ERROR, or the HTTP status name (for example NOT_FOUND) for other 4xx errors.", example = "VALIDATION_FAILED") String error,
-			@Schema(description = "Short fixed text. It never repeats the input.", example = "Request body is not valid.") String message,
-			@Schema(description = "ISO-8601 instant of the error.", example = "2026-10-27T10:00:00Z") Instant timestamp) {
-	}
+	private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
 	private final Clock clock;
 
-	SpecsExceptionHandler(Clock clock) {
+	ApiExceptionHandler(Clock clock) {
 		this.clock = clock;
 	}
 
@@ -63,6 +57,11 @@ class SpecsExceptionHandler {
 	@ExceptionHandler(SpecsNotFoundException.class)
 	ResponseEntity<ApiError> notFound() {
 		return build(HttpStatus.NOT_FOUND, "SPECS_NOT_FOUND", "Specs report not found.");
+	}
+
+	@ExceptionHandler(GameNotFoundException.class)
+	ResponseEntity<ApiError> gameNotFound() {
+		return build(HttpStatus.NOT_FOUND, "GAME_NOT_FOUND", "Game not found.");
 	}
 
 	@ExceptionHandler(Exception.class)

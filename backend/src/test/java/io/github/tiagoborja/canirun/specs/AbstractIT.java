@@ -5,7 +5,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest
-abstract class AbstractIT {
+public abstract class AbstractIT {
 
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
