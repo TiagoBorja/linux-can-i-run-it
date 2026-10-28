@@ -315,6 +315,13 @@ class SpecsApiIT extends AbstractIT {
     }
 
     @Test
+    void shouldReturnNotAcceptableWithoutStoringWhenAcceptIsXml() throws Exception {
+        mvc.perform(post("/api/specs").contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_XML)
+                .content(fixture("all-null.json"))).andExpect(status().isNotAcceptable());
+        assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isZero();
+    }
+
+    @Test
     void shouldReturnMethodNotAllowedWhenMethodIsPut() throws Exception {
         assertFrameworkError(mvc.perform(put("/api/specs").contentType(MediaType.APPLICATION_JSON).content("{}")),
                 405, "METHOD_NOT_ALLOWED");

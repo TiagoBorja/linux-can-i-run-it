@@ -56,7 +56,7 @@ class SpecsController {
 	@ApiResponse(responseCode = "201", description = "Report stored")
 	@ApiResponse(responseCode = "400", description = "Malformed JSON or invalid body", content = @Content(schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
 	@ApiResponse(responseCode = "413", description = "Body is larger than 16 KB", content = @Content(schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
-	@PostMapping
+	@PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<Created> create(@Valid @RequestBody SpecReportRequest request) {
 		String payload = objectMapper.writeValueAsString(request);
 		Instant now = Instant.now(clock);
