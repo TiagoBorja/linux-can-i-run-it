@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: can-i-run-it-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/canirun}
+    username: ${DB_USER:canirun}
+    password: ${DB_PASSWORD:canirun}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+server:
+  error:
+    include-stacktrace: never
+    include-message: never
+
+# Reject unknown fields in request bodies (trust boundary for POST /api/specs).
+spring.jackson.deserialization.fail-on-unknown-properties: true
+# Reject wrong types instead of coercing them: "123" or true for a number, 1.5 for an integer.
+spring.jackson.deserialization.accept-float-as-int: false
+spring.jackson.mapper.allow-coercion-of-scalars: false

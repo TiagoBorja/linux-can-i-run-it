@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "cpu": {
+    "model": "AMD Ryzen 7 170 with Radeon Graphics",
+    "cores": 8,
+    "threads": 16
+  },
+  "gpus": [
+    {
+      "vendor": "nvidia",
+      "model": "NVIDIA GeForce RTX 5050 Laptop GPU",
+      "vramMb": 8151,
+      "driver": "nvidia 595.104.02"
+    },
+    {
+      "vendor": "amd",
+      "model": "Radeon 680M",
+      "vramMb": 512,
+      "driver": null
+    }
+  ],
+  "ramMb": 15163,
+  "diskFreeMb": 106261,
+  "distro": {
+    "id": "pop",
+    "name": "Pop!_OS",
+    "version": "24.04"
+  },
+  "kernel": "7.2.6-76070206-generic",
+  "vulkan": {
+    "supported": null,
+    "apiVersion": null
+  }
+}

@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: canirun
+      POSTGRES_USER: canirun
+      POSTGRES_PASSWORD: canirun
+    ports:
+      - "5432:5432"
+    volumes:
+      - canirun-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  canirun-postgres-data:
