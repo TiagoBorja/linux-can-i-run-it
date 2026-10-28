@@ -54,6 +54,7 @@ Compare a stored report with the requirements of one game.
 
 - `code`: the same code as `GET /api/specs/{code}`. Unknown or expired codes give `404 SPECS_NOT_FOUND`.
 - `slug`: the game slug from `GET /api/games`. It must match `^[a-z0-9]+(-[a-z0-9]+)*$` and have 100 characters or less. A malformed or unknown slug gives `404 GAME_NOT_FOUND`.
+- Some malformed paths never reach the API. The web server rejects them first and returns `400 Bad Request` with a fixed HTML page, not the `ApiError` JSON. Examples: an encoded slash (`..%2Fx`), an encoded backslash (`%5C`), an encoded NUL (`%00`), or a raw `<` or `>`. The page does not repeat your input. This also applies to `{code}`.
 
 Success response: `200 OK`
 
@@ -157,6 +158,8 @@ Every error uses the same body shape:
 | `413` | `PAYLOAD_TOO_LARGE` | The body is larger than 16 KB (16384 bytes). |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` | The `Content-Type` is not `application/json`. The message is `Request failed.` |
 | `500` | `INTERNAL_ERROR` | The server has an unexpected error. The message does not show the cause. |
+
+The web server rejects some malformed paths before the API runs. For example, an encoded slash (`%2F`), an encoded backslash (`%5C`), an encoded NUL (`%00`), or a raw `<` or `>` in the path. These requests get `400 Bad Request` with a fixed HTML page, not the JSON body above. The page does not repeat your input.
 
 Limits for `POST /api/specs`:
 
