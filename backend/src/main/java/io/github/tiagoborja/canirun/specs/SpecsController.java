@@ -1,6 +1,7 @@
 package io.github.tiagoborja.canirun.specs;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -53,9 +54,11 @@ class SpecsController {
 	}
 
 	@Operation(summary = "Store a schema v1 hardware report")
-	@ApiResponse(responseCode = "201", description = "Report stored")
-	@ApiResponse(responseCode = "400", description = "Malformed JSON or invalid body", content = @Content(schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
-	@ApiResponse(responseCode = "413", description = "Body is larger than 16 KB", content = @Content(schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "201", description = "Report stored", headers = @Header(name = "Location", description = "Path of the new report, /api/specs/{code}", schema = @Schema(type = "string")), content = @Content(mediaType = "application/json", schema = @Schema(implementation = Created.class)))
+	@ApiResponse(responseCode = "400", description = "Malformed JSON or invalid body", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "413", description = "Body is larger than 16 KB", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "415", description = "Content-Type is not application/json", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "500", description = "Unexpected server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
 	@PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<Created> create(@Valid @RequestBody SpecReportRequest request) {
 		String payload = objectMapper.writeValueAsString(request);
@@ -85,7 +88,8 @@ class SpecsController {
 
 	@Operation(summary = "Read a stored report by code")
 	@ApiResponse(responseCode = "200", description = "The stored report", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecReportRequest.class)))
-	@ApiResponse(responseCode = "404", description = "Code is unknown or expired", content = @Content(schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "404", description = "Code is malformed, unknown or expired", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "500", description = "Unexpected server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
 	@GetMapping("/{code}")
 	ResponseEntity<String> get(@PathVariable String code) {
 		if (!CODE.matcher(code).matches()) {
