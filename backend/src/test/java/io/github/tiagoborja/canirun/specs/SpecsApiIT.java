@@ -176,6 +176,17 @@ class SpecsApiIT extends AbstractIT {
         assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isZero();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = { "\"kernel\": null", "\"model\":null", "\"driver\":null", "\"id\": null",
+            "\"name\": null", "\"version\": null", "\"apiVersion\": null" })
+    void shouldReturnValidationFailedWithoutStoringWhenTextFieldHasLoneSurrogate(String nullField) throws Exception {
+        String body = fixture("all-null.json").replace("\"gpus\": []", "\"gpus\": " + gpus(1));
+        assertThat(body.indexOf(nullField)).isNotNegative().isEqualTo(body.lastIndexOf(nullField));
+        String key = nullField.substring(0, nullField.indexOf(':') + 1);
+        assertBadRequest(body.replace(nullField, key + " \"a\\ud800\""), "VALIDATION_FAILED");
+        assertThat(jdbc.queryForObject("select count(*) from spec_report", Integer.class)).isZero();
+    }
+
     @Test
     void shouldReturnSameSpecsWhenStringHasValidSurrogatePair() throws Exception {
         assertRoundTrip(report("\"a\\ud83d\\ude00b\"", gpus(0)));
