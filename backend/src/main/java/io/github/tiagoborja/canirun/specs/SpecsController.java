@@ -1,5 +1,6 @@
 package io.github.tiagoborja.canirun.specs;
 
+import io.github.tiagoborja.canirun.ApiError;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -11,7 +12,6 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.regex.Pattern;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
@@ -29,7 +29,6 @@ import tools.jackson.databind.ObjectMapper;
 @RequestMapping("/api/specs")
 class SpecsController {
 
-	private static final Pattern CODE = Pattern.compile("^[0-9A-HJKMNP-TV-Z]{10}$");
 	private static final Duration TTL = Duration.ofDays(30);
 	private static final int MAX_TRIES = 3;
 	private static final String CODE_CONSTRAINT = "spec_report_code_key";
@@ -41,13 +40,15 @@ class SpecsController {
 	}
 
 	private final SpecReportRepository repository;
+	private final SpecsLookup lookup;
 	private final CodeGenerator codeGenerator;
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
 
-	SpecsController(SpecReportRepository repository, CodeGenerator codeGenerator, ObjectMapper objectMapper,
-			Clock clock) {
+	SpecsController(SpecReportRepository repository, SpecsLookup lookup, CodeGenerator codeGenerator,
+			ObjectMapper objectMapper, Clock clock) {
 		this.repository = repository;
+		this.lookup = lookup;
 		this.codeGenerator = codeGenerator;
 		this.objectMapper = objectMapper;
 		this.clock = clock;
@@ -55,10 +56,10 @@ class SpecsController {
 
 	@Operation(summary = "Store a schema v1 hardware report")
 	@ApiResponse(responseCode = "201", description = "Report stored", headers = @Header(name = "Location", description = "Path of the new report, /api/specs/{code}", schema = @Schema(type = "string")), content = @Content(mediaType = "application/json", schema = @Schema(implementation = Created.class)))
-	@ApiResponse(responseCode = "400", description = "Malformed JSON or invalid body", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
-	@ApiResponse(responseCode = "413", description = "Body is larger than 16 KB", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
-	@ApiResponse(responseCode = "415", description = "Content-Type is not application/json", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
-	@ApiResponse(responseCode = "500", description = "Unexpected server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "400", description = "Malformed JSON or invalid body", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
+	@ApiResponse(responseCode = "413", description = "Body is larger than 16 KB", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
+	@ApiResponse(responseCode = "415", description = "Content-Type is not application/json", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
+	@ApiResponse(responseCode = "500", description = "Unexpected server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
 	@PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<Created> create(@Valid @RequestBody SpecReportRequest request) {
 		String payload = objectMapper.writeValueAsString(request);
@@ -88,15 +89,10 @@ class SpecsController {
 
 	@Operation(summary = "Read a stored report by code")
 	@ApiResponse(responseCode = "200", description = "The stored report", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecReportRequest.class)))
-	@ApiResponse(responseCode = "404", description = "Code is malformed, unknown or expired", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
-	@ApiResponse(responseCode = "500", description = "Unexpected server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SpecsExceptionHandler.ApiError.class)))
+	@ApiResponse(responseCode = "404", description = "Code is malformed, unknown or expired", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
+	@ApiResponse(responseCode = "500", description = "Unexpected server error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
 	@GetMapping("/{code}")
 	ResponseEntity<String> get(@PathVariable String code) {
-		if (!CODE.matcher(code).matches()) {
-			throw new SpecsNotFoundException();
-		}
-		SpecReport report = repository.findByCodeAndExpiresAtAfter(code, Instant.now(clock))
-				.orElseThrow(SpecsNotFoundException::new);
-		return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(report.getPayload());
+		return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(lookup.payload(code));
 	}
 }
